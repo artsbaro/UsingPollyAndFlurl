@@ -1,6 +1,7 @@
 ﻿using Polly;
 using Polly.Retry;
 using Polly.Timeout;
+using Polly.CircuitBreaker;
 using Polly.Wrap;
 using System.Diagnostics;
 
@@ -8,7 +9,7 @@ namespace UsingPollyAndFlurlTogetherConsumer
 {
     public static class Policies
     {
-        private static TimeoutPolicy<HttpResponseMessage> TimeoutPolicy
+        private static AsyncTimeoutPolicy<HttpResponseMessage> TimeoutPolicy
         {
             get
             {
@@ -20,7 +21,7 @@ namespace UsingPollyAndFlurlTogetherConsumer
             }
         }
 
-        private static RetryPolicy<HttpResponseMessage> RetryPolicy
+        private static AsyncRetryPolicy<HttpResponseMessage> RetryPolicy
         {
             get
             {
@@ -40,6 +41,44 @@ namespace UsingPollyAndFlurlTogetherConsumer
             }
         }
 
-        public static PolicyWrap<HttpResponseMessage> PolicyStrategy => Policy.WrapAsync(RetryPolicy, TimeoutPolicy);
+        private static AsyncCircuitBreakerPolicy CircuitBreakerPolicy(
+       int numberOfExceptionsBeforeBreaking,
+       int durationOfBreakInSeconds)
+        {
+            return Policy
+                .Handle<Exception>()
+                .CircuitBreakerAsync(
+                    numberOfExceptionsBeforeBreaking,
+                    TimeSpan.FromSeconds(durationOfBreakInSeconds),
+                    onBreak: (_, _) =>
+                    {
+                        ShowCircuitState("Open (onBreak)", ConsoleColor.Red);
+                    },
+                    onReset: () =>
+                    {
+                        ShowCircuitState("Closed (onReset)", ConsoleColor.Green);
+                    },
+                    onHalfOpen: () =>
+                    {
+                        ShowCircuitState("Half Open (onHalfOpen)", ConsoleColor.Yellow);
+                    });
+        }
+
+        private static void ShowCircuitState(
+            string descStatus, ConsoleColor backgroundColor)
+        {
+            var previousBackgroundColor = Console.BackgroundColor;
+            var previousForegroundColor = Console.ForegroundColor;
+
+            Console.BackgroundColor = backgroundColor;
+            Console.ForegroundColor = ConsoleColor.Black;
+
+            Console.Out.WriteLine($" ***** Estado do Circuito: {descStatus} **** ");
+
+            Console.BackgroundColor = previousBackgroundColor;
+            Console.ForegroundColor = previousForegroundColor;
+        }
+
+        public static AsyncPolicyWrap<HttpResponseMessage> PolicyStrategy => Policy.WrapAsync(RetryPolicy, TimeoutPolicy);
     }
 }
